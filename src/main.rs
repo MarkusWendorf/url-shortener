@@ -13,9 +13,9 @@ use axum::Json;
 use axum::Router;
 
 use heed::types::Str;
-use heed::MdbError;
 use heed::PutFlags;
 use heed::{Database, EnvOpenOptions};
+use heed::{EnvFlags, MdbError};
 
 use id::generate_id;
 use structs::{CreateShortUrl, ShortUrlCreated};
@@ -32,13 +32,17 @@ async fn main() {
 
     let env = unsafe {
         EnvOpenOptions::new()
-            .map_size(10000 * 1024 * 1024)
+            .map_size(40000 * 1024 * 1024)
+            .max_readers(64)
+            .flags(EnvFlags::WRITE_MAP | EnvFlags::MAP_ASYNC)
             .open(path)
             .unwrap()
     };
 
     let mut tx = env.write_txn().unwrap();
     let db: Database<Str, Str> = env.create_database(&mut tx, None).unwrap();
+
+    println!("Item Count = {}", db.len(&tx).unwrap());
     tx.commit().unwrap();
 
     let shared_state = Arc::new(AppState { db, env });
