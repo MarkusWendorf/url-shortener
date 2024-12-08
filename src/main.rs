@@ -32,7 +32,7 @@ async fn main() {
 
     let env = unsafe {
         EnvOpenOptions::new()
-            .map_size(10 * 1024 * 1024)
+            .map_size(10000 * 1024 * 1024)
             .open(path)
             .unwrap()
     };
@@ -78,7 +78,8 @@ async fn create_short_url(
                 retries += 1;
                 continue;
             }
-            Err(_) => {
+            Err(err) => {
+                println!("{:?}", err);
                 tx.abort();
                 break;
             }
