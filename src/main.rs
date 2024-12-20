@@ -3,10 +3,11 @@ mod id;
 mod sqlite;
 mod structs;
 
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::extract::{ConnectInfo, Path, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect};
 use axum::routing::{get, post};
 use axum::Json;
@@ -37,7 +38,13 @@ async fn main() {
         .with_state(shared_state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3333").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }
 
 async fn create_short_url(
@@ -82,9 +89,12 @@ async fn create_short_url(
 }
 
 async fn redirect_to_url(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    println!("{:?}", addr.ip());
+
     let storage = match state.storage.lock() {
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         Ok(storage) => storage,
