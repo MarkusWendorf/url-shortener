@@ -1,9 +1,9 @@
 #![feature(let_chains)]
 mod id;
+mod storage;
 mod structs;
 
-use std::fs;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -12,52 +12,37 @@ use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 
-use heed::types::Str;
-use heed::PutFlags;
-use heed::{Database, EnvOpenOptions};
-use heed::{EnvFlags, MdbError};
-
 use id::generate_id;
+
+use storage::lmdb::LmdbStorage;
+use storage::sqlite::SqliteStorage;
+use storage::storage::{Error, Storage};
 use structs::{CreateShortUrl, ShortUrlCreated};
 
 struct AppState {
-    pub db: heed::Database<Str, Str>,
-    pub env: heed::Env,
+    pub storage: Box<dyn Storage>,
 }
 
 #[tokio::main]
 async fn main() {
-    let path = std::path::Path::new("data");
-    fs::create_dir_all(&path).unwrap();
+    let storage = LmdbStorage::new();
+    println!("Key count: {:?}", storage.key_count());
 
-    let env = unsafe {
-        EnvOpenOptions::new()
-            .map_size(40000 * 1024 * 1024)
-            .max_readers(64)
-            .flags(EnvFlags::WRITE_MAP | EnvFlags::MAP_ASYNC)
-            .open(path)
-            .unwrap()
-    };
-
-    let mut tx = env.write_txn().unwrap();
-    let db: Database<Str, Str> = env.create_database(&mut tx, None).unwrap();
-
-    println!("Item Count = {}", db.len(&tx).unwrap());
-    tx.commit().unwrap();
-
-    let shared_state = Arc::new(AppState { db, env });
+    let shared_state = Arc::new(Mutex::new(AppState {
+        storage: Box::new(storage),
+    }));
 
     let app = Router::new()
         .route("/create-short-url", post(create_short_url))
         .route("/:id", get(redirect_to_url))
         .with_state(shared_state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3333").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
 async fn create_short_url(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<Mutex<AppState>>>,
     Json(payload): Json<CreateShortUrl>,
 ) -> impl IntoResponse {
     let mut selected_id: Option<String> = None;
@@ -66,29 +51,25 @@ async fn create_short_url(
     let mut retries = 0;
 
     loop {
-        let mut tx = state.env.write_txn().unwrap();
-
         let generated_id = generate_id();
 
-        let insert =
-            state
-                .db
-                .put_with_flags(&mut tx, PutFlags::NO_OVERWRITE, &generated_id, &payload.url);
+        let insert = state
+            .lock()
+            .unwrap()
+            .storage
+            .set(&generated_id, &payload.url);
 
         match insert {
-            Err(heed::Error::Mdb(MdbError::KeyExist)) if retries < max_retries => {
-                // Retry until we have an id that does not already exist
-                tx.abort();
+            Err(Error::DuplicateKey) if retries < max_retries => {
                 retries += 1;
                 continue;
             }
             Err(err) => {
-                println!("{:?}", err);
-                tx.abort();
+                println!("Error {:?}", err);
                 break;
             }
             Ok(_) => {
-                selected_id = tx.commit().ok().map(|_| generated_id);
+                selected_id = Some(generated_id);
                 break;
             }
         }
@@ -102,14 +83,11 @@ async fn create_short_url(
 }
 
 async fn redirect_to_url(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<Mutex<AppState>>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if let Ok(tx) = state.env.read_txn()
-        && let Ok(Some(url)) = state.db.get(&tx, &id)
-    {
-        return Redirect::temporary(&url).into_response();
+    match state.lock().unwrap().storage.get(&id) {
+        Some(url) => Redirect::temporary(&url).into_response(),
+        _ => StatusCode::NOT_FOUND.into_response(),
     }
-
-    StatusCode::NOT_FOUND.into_response()
 }
