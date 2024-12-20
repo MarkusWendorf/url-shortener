@@ -43,19 +43,19 @@ impl Storage for LmdbStorage {
     }
 
     fn set(&self, key: &str, value: &str) -> Result<(), Error> {
-        let mut tx = self.env.write_txn().unwrap();
+        let mut tx = self.env.write_txn().map_err(|_| Error::GenericError)?;
 
         let insert = self
             .db
             .put_with_flags(&mut tx, PutFlags::NO_OVERWRITE, &key, &value);
 
-        match insert {
+        return match insert {
             Err(err) => match err {
                 heed::Error::Mdb(MdbError::KeyExist) => Err(Error::DuplicateKey),
                 _ => Err(Error::GenericError),
             },
             _ => tx.commit().map_err(|_| Error::GenericError),
-        }
+        };
     }
 
     fn key_count(&self) -> u64 {

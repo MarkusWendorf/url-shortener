@@ -31,17 +31,25 @@ impl SqliteStorage {
 
 impl Storage for SqliteStorage {
     fn get(&self, key: &str) -> Option<String> {
-        self.connection
-            .prepare_cached("SELECT * FROM urls WHERE key = ?1")
-            .unwrap()
-            .query_row([key], |row| row.get::<usize, String>(1))
-            .ok()
+        let query = self
+            .connection
+            .prepare_cached("SELECT url FROM urls WHERE key = ?1");
+
+        match query {
+            Ok(mut query) => query
+                .query_row([key], |row| row.get::<usize, String>(0))
+                .ok(),
+            Err(_) => None,
+        }
     }
 
     fn set(&self, key: &str, value: &str) -> Result<(), Error> {
-        self.connection
+        let mut insert = self
+            .connection
             .prepare_cached("INSERT INTO urls (key, url) VALUES (?1, ?2)")
-            .unwrap()
+            .map_err(|_| Error::GenericError)?;
+
+        insert
             .execute((key, value))
             .map(|_| ())
             .map_err(|err| match err {
@@ -54,7 +62,6 @@ impl Storage for SqliteStorage {
             .query_row("SELECT COUNT(*) FROM urls", (), |row| {
                 row.get::<usize, u64>(0)
             })
-            .map(|count| count)
             .unwrap_or_default()
     }
 }
