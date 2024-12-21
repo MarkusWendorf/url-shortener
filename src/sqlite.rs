@@ -22,12 +22,12 @@ impl SqliteStorage {
 
         connection
             .execute(
-                "CREATE TABLE IF NOT EXISTS urls (key TEXT PRIMARY KEY, url TEXT, created_at INTEGER DEFAULT CURRENT_TIMESTAMP)",
+                "CREATE TABLE IF NOT EXISTS urls (key TEXT PRIMARY KEY, url TEXT, created_at INTEGER DEFAULT CURRENT_TIMESTAMP, user_id INTEGER)",
                 (),
             )
             .unwrap();
 
-        SqliteStorage { connection }
+        Self { connection }
     }
 
     pub fn get(&self, key: &str) -> Option<String> {
@@ -46,9 +46,9 @@ impl SqliteStorage {
     pub fn set(&self, key: &str, value: &str) -> Result<usize, rusqlite::Error> {
         let mut insert = self
             .connection
-            .prepare_cached("INSERT INTO urls (key, url) VALUES (?1, ?2)")?;
+            .prepare_cached("INSERT INTO urls (key, url, user_id) VALUES (?1, ?2, ?3)")?;
 
-        insert.execute((key, value))
+        insert.execute((key, value, 9999))
     }
 
     pub fn key_count(&self) -> u64 {
