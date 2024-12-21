@@ -1,3 +1,5 @@
+use std::{fs, path::Path};
+
 use rusqlite::Connection;
 
 pub struct SqliteStorage {
@@ -6,7 +8,10 @@ pub struct SqliteStorage {
 
 impl SqliteStorage {
     pub fn new() -> SqliteStorage {
-        let connection = Connection::open("./data/db.sqlite").unwrap();
+        let data_dir = Path::new("./data");
+        fs::create_dir_all(data_dir).unwrap();
+
+        let connection = Connection::open(data_dir.join("db.sqlite")).unwrap();
 
         connection
             .pragma_update(None, "journal_mode", "WAL")
