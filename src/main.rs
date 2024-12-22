@@ -45,6 +45,7 @@ async fn main() {
     let shared_state = Arc::new(Mutex::new(AppState { storage, sender }));
 
     let app = Router::new()
+        .route("/", get(health_check))
         .route("/create-short-url", post(create_short_url))
         .route("/:id", get(redirect_to_url))
         .with_state(shared_state);
@@ -57,6 +58,10 @@ async fn main() {
     )
     .await
     .unwrap();
+}
+
+async fn health_check() -> impl IntoResponse {
+    StatusCode::OK.into_response()
 }
 
 async fn create_short_url(
@@ -104,15 +109,26 @@ async fn redirect_to_url(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     let app = state.lock().await;
-    println!("{:?}", headers);
 
     if let Some(url) = app.storage.get(&id) {
         let _ = app
             .sender
             .send_async(Metric {
-                ip: addr.ip().to_string(),
+                ip: header_to_string(&headers, "cloudfront-viewer-address")
+                    .unwrap_or_else(|| addr.ip().to_string()),
                 url: url.clone(),
                 shorthand_id: id,
+                android: header_to_bool(&headers, "cloudfront-is-android-viewer"),
+                ios: header_to_bool(&headers, "cloudfront-is-ios-viewer"),
+                mobile: header_to_bool(&headers, "cloudfront-is-mobile-viewer"),
+                region_name: header_to_string(&headers, "cloudfront-viewer-country-region-name"),
+                country: header_to_string(&headers, "cloudfront-viewer-country"),
+                city: header_to_string(&headers, "cloudfront-viewer-city"),
+                zip_code: header_to_string(&headers, "cloudfront-viewer-postal-code"),
+                time_zone: header_to_string(&headers, "cloudfront-viewer-time-zone"),
+                user_agent: header_to_string(&headers, "user-agent"),
+                longitude: header_to_float(&headers, "cloudfront-viewer-longitude"),
+                latitude: header_to_float(&headers, "cloudfront-viewer-latitude"),
             })
             .await;
 
@@ -120,4 +136,22 @@ async fn redirect_to_url(
     }
 
     StatusCode::NOT_FOUND.into_response()
+}
+
+fn header_to_bool(headers: &HeaderMap, key: &str) -> Option<bool> {
+    headers.get(key).map(|value| value == "true")
+}
+
+fn header_to_string(headers: &HeaderMap, key: &str) -> Option<String> {
+    headers
+        .get(key)
+        .map(|value| String::from(value.to_str().unwrap_or_default()))
+}
+
+fn header_to_float(headers: &HeaderMap, key: &str) -> Option<f64> {
+    if let Some(value) = headers.get(key) {
+        return value.to_str().unwrap_or_default().parse::<f64>().ok();
+    }
+
+    None
 }

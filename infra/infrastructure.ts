@@ -1,5 +1,9 @@
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as elb from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as targets from "aws-cdk-lib/aws-elasticloadbalancingv2-targets";
 import { Construct } from "constructs";
 
 export class InfraStack extends cdk.Stack {
@@ -7,7 +11,7 @@ export class InfraStack extends cdk.Stack {
     super(scope, id, props);
 
     const vpc = new ec2.Vpc(this, "Vpc", {
-      maxAzs: 1,
+      maxAzs: 2,
       natGateways: 0,
       subnetConfiguration: [
         {
@@ -36,7 +40,7 @@ export class InfraStack extends cdk.Stack {
     const instance = new ec2.Instance(this, "Machine", {
       instanceType: ec2.InstanceType.of(
         ec2.InstanceClass.T3A,
-        ec2.InstanceSize.XLARGE
+        ec2.InstanceSize.MEDIUM
       ),
       blockDevices: [
         {
@@ -62,7 +66,36 @@ export class InfraStack extends cdk.Stack {
       ),
     });
 
-    // add alb, cloudfront
+    const alb = new elb.ApplicationLoadBalancer(this, "ELB", {
+      vpc,
+      securityGroup,
+      internetFacing: true,
+    });
+
+    const listener = alb.addListener("Listener", {
+      protocol: elb.ApplicationProtocol.HTTP,
+    });
+
+    listener.addTargets("Ec2Target", {
+      protocol: elb.ApplicationProtocol.HTTP,
+      targets: [new targets.InstanceTarget(instance, 3333)],
+    });
+
+    // TODO: https + certificates
+    const cf = new cloudfront.Distribution(this, "CDN", {
+      defaultBehavior: {
+        origin: new origins.LoadBalancerV2Origin(alb, {
+          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+        }),
+        originRequestPolicy:
+          cloudfront.OriginRequestPolicy.ALL_VIEWER_AND_CLOUDFRONT_2022,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+      },
+    });
+
+    new cdk.CfnOutput(this, "Cloudfront", {
+      value: cf.distributionDomainName,
+    });
   }
 }
 

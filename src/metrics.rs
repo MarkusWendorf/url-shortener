@@ -11,6 +11,17 @@ pub struct Metric {
     pub shorthand_id: String,
     pub url: String,
     pub ip: String,
+    pub android: Option<bool>,
+    pub ios: Option<bool>,
+    pub mobile: Option<bool>,
+    pub region_name: Option<String>,
+    pub country: Option<String>,
+    pub city: Option<String>,
+    pub zip_code: Option<String>,
+    pub time_zone: Option<String>,
+    pub user_agent: Option<String>,
+    pub longitude: Option<f64>,
+    pub latitude: Option<f64>,
 }
 
 pub struct MetricsStorage {
@@ -19,7 +30,7 @@ pub struct MetricsStorage {
     last_flush: Instant,
 }
 
-const MAX_BUFFER_SIZE: usize = 100;
+const MAX_BUFFER_SIZE: usize = 10;
 
 impl MetricsStorage {
     pub fn new() -> Self {
@@ -50,6 +61,17 @@ impl MetricsStorage {
                     url TEXT, 
                     created_at INTEGER DEFAULT CURRENT_TIMESTAMP, 
                     ip TEXT,
+                    android INTEGER,
+                    ios INTEGER,
+                    mobile INTEGER,
+                    region_name TEXT,
+                    country TEXT,
+                    city TEXT,
+                    zip_code TEXT,
+                    time_zone TEXT,
+                    user_agent TEXT,
+                    longitude REAL,
+                    latitude REAL,
                     PRIMARY KEY (user_id, key, id)
                   )
                   ",
@@ -86,13 +108,26 @@ impl MetricsStorage {
             let id = Uuid::now_v7();
 
             tx.execute(
-                "INSERT INTO metrics (id, key, user_id, url, ip) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO metrics 
+                    (id, key, user_id, url, ip, android, ios, mobile, region_name, country, city, zip_code, time_zone, user_agent, longitude, latitude) VALUES
+                    (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 (
                     id.to_string(),
                     metric.shorthand_id,
                     9999,
                     metric.url,
                     metric.ip,
+                    metric.android,
+                    metric.ios,
+                    metric.mobile,
+                    metric.region_name,
+                    metric.country,
+                    metric.city,
+                    metric.zip_code,
+                    metric.time_zone,
+                    metric.user_agent,
+                    metric.longitude,
+                    metric.latitude,
                 ),
             )?;
         }
