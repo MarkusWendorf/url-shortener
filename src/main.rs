@@ -5,7 +5,8 @@ mod sqlite;
 mod structs;
 
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use axum::extract::{ConnectInfo, Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -13,7 +14,8 @@ use axum::response::{IntoResponse, Redirect};
 use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
-use metrics::MetricsStorage;
+use flume::Sender;
+use metrics::{Metric, MetricsStorage};
 use rusqlite::Error::SqliteFailure;
 
 use id::generate_id;
@@ -23,17 +25,24 @@ use structs::{CreateShortUrl, ShortUrlCreated};
 
 struct AppState {
     pub storage: SqliteStorage,
-    pub metrics: MetricsStorage,
+    pub sender: Sender<Metric>,
 }
 
 #[tokio::main]
 async fn main() {
     let storage = SqliteStorage::new();
-    let metrics = MetricsStorage::new();
+    let mut metrics = MetricsStorage::new();
 
     println!("Key count: {:?}", metrics.key_count());
 
-    let shared_state = Arc::new(Mutex::new(AppState { storage, metrics }));
+    let (sender, receiver) = flume::unbounded::<Metric>();
+    tokio::spawn(async move {
+        while let Ok(metric) = receiver.recv_async().await {
+            let _ = metrics.add(metric);
+        }
+    });
+
+    let shared_state = Arc::new(Mutex::new(AppState { storage, sender }));
 
     let app = Router::new()
         .route("/create-short-url", post(create_short_url))
@@ -54,10 +63,7 @@ async fn create_short_url(
     State(state): State<Arc<Mutex<AppState>>>,
     Json(payload): Json<CreateShortUrl>,
 ) -> impl IntoResponse {
-    let app = match state.lock() {
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        Ok(app) => app,
-    };
+    let app = state.lock().await;
 
     let mut selected_id: Option<String> = None;
 
@@ -92,19 +98,23 @@ async fn create_short_url(
 }
 
 async fn redirect_to_url(
+    headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<Mutex<AppState>>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    println!("{:?}", addr.ip());
-
-    let app = match state.lock() {
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        Ok(app) => app,
-    };
+    let app = state.lock().await;
+    println!("{:?}", headers);
 
     if let Some(url) = app.storage.get(&id) {
-        let _ = app.metrics.set(&id, &url, &addr.ip().to_string());
+        let _ = app
+            .sender
+            .send_async(Metric {
+                ip: addr.ip().to_string(),
+                url: url.clone(),
+                shorthand_id: id,
+            })
+            .await;
 
         return Redirect::temporary(&url).into_response();
     }

@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.7.9"
+axum = { version = "0.7.9", features = ["macros"] }
+crossbeam-channel = "0.5.14"
+flume =  { version = "0.11.1", features = ["async"] }
 postgres = "0.19.9"
 rand = "0.8.5"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
