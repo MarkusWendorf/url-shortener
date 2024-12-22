@@ -1,5 +1,6 @@
 #![feature(let_chains)]
 mod id;
+mod metrics;
 mod sqlite;
 mod structs;
 
@@ -12,6 +13,7 @@ use axum::response::{IntoResponse, Redirect};
 use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
+use metrics::MetricsStorage;
 use rusqlite::Error::SqliteFailure;
 
 use id::generate_id;
@@ -20,17 +22,18 @@ use sqlite::SqliteStorage;
 use structs::{CreateShortUrl, ShortUrlCreated};
 
 struct AppState {
-    pub storage: Mutex<SqliteStorage>,
+    pub storage: SqliteStorage,
+    pub metrics: MetricsStorage,
 }
 
 #[tokio::main]
 async fn main() {
     let storage = SqliteStorage::new();
-    println!("Key count: {:?}", storage.key_count());
+    let metrics = MetricsStorage::new();
 
-    let shared_state = Arc::new(AppState {
-        storage: Mutex::new(storage),
-    });
+    println!("Key count: {:?}", metrics.key_count());
+
+    let shared_state = Arc::new(Mutex::new(AppState { storage, metrics }));
 
     let app = Router::new()
         .route("/create-short-url", post(create_short_url))
@@ -48,12 +51,12 @@ async fn main() {
 }
 
 async fn create_short_url(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<Mutex<AppState>>>,
     Json(payload): Json<CreateShortUrl>,
 ) -> impl IntoResponse {
-    let storage = match state.storage.lock() {
+    let app = match state.lock() {
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        Ok(storage) => storage,
+        Ok(app) => app,
     };
 
     let mut selected_id: Option<String> = None;
@@ -64,7 +67,7 @@ async fn create_short_url(
     loop {
         let generated_id = generate_id();
 
-        match storage.set(&generated_id, &payload.url) {
+        match app.storage.set(&generated_id, &payload.url) {
             // Duplicate key, try again
             Err(SqliteFailure(err, _)) if err.extended_code == 1555 && retries < max_retries => {
                 retries += 1;
@@ -90,18 +93,21 @@ async fn create_short_url(
 
 async fn redirect_to_url(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<Mutex<AppState>>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     println!("{:?}", addr.ip());
 
-    let storage = match state.storage.lock() {
+    let app = match state.lock() {
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        Ok(storage) => storage,
+        Ok(app) => app,
     };
 
-    match storage.get(&id) {
-        Some(url) => Redirect::temporary(&url).into_response(),
-        _ => StatusCode::NOT_FOUND.into_response(),
+    if let Some(url) = app.storage.get(&id) {
+        let _ = app.metrics.set(&id, &url, &addr.ip().to_string());
+
+        return Redirect::temporary(&url).into_response();
     }
+
+    StatusCode::NOT_FOUND.into_response()
 }
