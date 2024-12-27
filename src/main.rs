@@ -1,12 +1,14 @@
 #![feature(let_chains)]
+#![feature(const_for)]
 mod id;
 mod metrics;
 mod sqlite;
 mod structs;
 
-use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::{net::SocketAddr, time::Duration};
+use tokio::{sync::Mutex, time};
+use tokio_postgres::NoTls;
 
 use axum::{
     extract::{ConnectInfo, Path, State},
@@ -15,28 +17,88 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use flume::Sender;
+
+use axum_extra::extract::cookie::{Cookie, CookieJar};
+
 use rusqlite::Error::SqliteFailure;
 
 use id::generate_id;
-use metrics::{Metric, MetricsStorage};
+use metrics::{flush_direct, Metric};
 use sqlite::SqliteStorage;
 use structs::{CreateShortUrl, ShortUrlCreated};
 
 struct AppState {
     storage: SqliteStorage,
-    sender: Sender<Metric>,
+    metrics_buffer: Vec<Metric>,
+    pool: deadpool_postgres::Pool,
 }
+
+const VISITOR_COOKIE: &str = "visitor-id";
 
 #[tokio::main]
 async fn main() {
     let storage = SqliteStorage::new();
-    let metrics = MetricsStorage::new();
 
-    let (sender, receiver) = flume::unbounded();
-    tokio::spawn(metrics_handler(receiver, metrics));
+    // for _ in 0..5000000 {
+    //     let visitor_id: i32 = thread_rng().gen_range(1..100);
 
-    let state = Arc::new(Mutex::new(AppState { storage, sender }));
+    //     metrics
+    //         .add(Metric {
+    //             android: Some(true),
+    //             ios: Some(true),
+    //             mobile: Some(true),
+    //             city: Some("Rostock".to_owned()),
+    //             country: Some("DE".to_owned()),
+    //             region_name: Some("Mecklenburg-Vorpommern".to_owned()),
+    //             time_zone: Some("Europe/Berlin".to_owned()),
+    //             user_agent: Some("chrome".to_owned()),
+    //             zip_code: Some("18057".to_owned()),
+    //             ip: "asd".to_owned(),
+    //             shorthand_id: "asd".to_owned(),
+    //             url: "https://google.com".to_owned(),
+    //             visitor_id: visitor_id.to_string(),
+    //             latitude: Some(12.23),
+    //             longitude: Some(53.23),
+    //         })
+    //         .await
+    //         .unwrap();
+    // }
+
+    let mut cfg = deadpool_postgres::Config::new();
+    cfg.dbname = Some("metrics".to_string());
+    cfg.host = Some("localhost".to_string());
+    cfg.port = Some(6432);
+    cfg.user = Some("postgres".to_string());
+    cfg.password = Some("password".to_string());
+
+    cfg.manager = Some(deadpool_postgres::ManagerConfig {
+        recycling_method: deadpool_postgres::RecyclingMethod::Fast,
+    });
+
+    let pool = cfg
+        .create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)
+        .unwrap();
+
+    let state = Arc::new(Mutex::new(AppState {
+        storage,
+        metrics_buffer: Vec::with_capacity(100000),
+        pool,
+    }));
+
+    let mut interval = time::interval(Duration::from_secs(10));
+    let app_state = state.clone();
+
+    tokio::spawn(async move {
+        loop {
+            interval.tick().await;
+            let mut app = app_state.lock().await;
+            let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
+            let client = app.pool.get().await.unwrap();
+            println!("flush {}", metrics.len());
+            flush_direct(client, metrics).await.unwrap();
+        }
+    });
+
     let app = create_router(state);
 
     axum::serve(
@@ -53,12 +115,6 @@ fn create_router(state: Arc<Mutex<AppState>>) -> Router {
         .route("/create-short-url", post(create_short_url))
         .route("/:id", get(redirect_to_url))
         .with_state(state)
-}
-
-async fn metrics_handler(receiver: flume::Receiver<Metric>, mut metrics: MetricsStorage) {
-    while let Ok(metric) = receiver.recv_async().await {
-        metrics.add(metric).ok();
-    }
 }
 
 async fn create_short_url(
@@ -82,18 +138,30 @@ async fn create_short_url(
 
 async fn redirect_to_url(
     headers: HeaderMap,
+    mut jar: CookieJar,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<Mutex<AppState>>>,
     Path(id): Path<String>,
-) -> impl IntoResponse {
-    let app = state.lock().await;
+) -> Result<(CookieJar, Redirect), StatusCode> {
+    let visitor_id = match jar.get(VISITOR_COOKIE) {
+        Some(cookie) => cookie.value().to_owned(),
+        None => {
+            let id = generate_id();
+            let cookie = Cookie::new(VISITOR_COOKIE, id.clone());
+            jar = jar.add(cookie);
+            id
+        }
+    };
+
+    let mut app = state.lock().await;
 
     if let Some(url) = app.storage.get(&id) {
         let metric = Metric {
+            visitor_id,
+            shorthand_id: id,
             ip: header_to_string(&headers, "cloudfront-viewer-address")
                 .unwrap_or_else(|| addr.ip().to_string()),
             url: url.clone(),
-            shorthand_id: id,
             android: header_to_bool(&headers, "cloudfront-is-android-viewer"),
             ios: header_to_bool(&headers, "cloudfront-is-ios-viewer"),
             mobile: header_to_bool(&headers, "cloudfront-is-mobile-viewer"),
@@ -107,12 +175,19 @@ async fn redirect_to_url(
             latitude: header_to_float(&headers, "cloudfront-viewer-latitude"),
         };
 
-        app.sender.send_async(metric).await.ok();
+        app.metrics_buffer.push(metric);
 
-        return Redirect::temporary(&url).into_response();
+        if app.metrics_buffer.len() >= 1000 {
+            let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
+            let client = app.pool.get().await.unwrap();
+
+            tokio::spawn(flush_direct(client, metrics));
+        }
+
+        return Ok((jar, Redirect::temporary(&url)));
     }
 
-    StatusCode::NOT_FOUND.into_response()
+    Err(StatusCode::NOT_FOUND)
 }
 
 fn header_to_bool(headers: &HeaderMap, key: &str) -> Option<bool> {
