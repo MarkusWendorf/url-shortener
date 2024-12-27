@@ -66,8 +66,8 @@ pub async fn flush_direct(
     mut client: deadpool_postgres::Object,
     mut metrics: Vec<Metric>,
 ) -> Result<(), Error> {
-    let transaction = client.transaction().await.unwrap();
-    let sink = transaction.copy_in(COPY_STMT).await.unwrap();
+    let transaction = client.transaction().await?;
+    let sink = transaction.copy_in(COPY_STMT).await?;
 
     let writer = BinaryCopyInWriter::new(sink, &COPY_TYPES);
     pin!(writer);
@@ -76,9 +76,11 @@ pub async fn flush_direct(
 
     for metric in metrics.drain(..).into_iter() {
         row.clear();
+
         let id = Uuid::now_v7();
         let user_id: u32 = thread_rng().gen_range(1..100);
 
+        // TODO: add timestamp instead of relying on auto generated value (insert time != event time)
         writer
             .as_mut()
             .write(&[
@@ -100,12 +102,11 @@ pub async fn flush_direct(
                 &metric.latitude,
                 &metric.visitor_id,
             ])
-            .await
-            .unwrap();
+            .await?;
     }
 
-    writer.finish().await.unwrap();
-    transaction.commit().await.unwrap();
+    writer.finish().await?;
+    transaction.commit().await?;
 
     Ok(())
 }

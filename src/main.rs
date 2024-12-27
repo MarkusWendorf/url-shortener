@@ -93,9 +93,10 @@ async fn main() {
             interval.tick().await;
             let mut app = app_state.lock().await;
             let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
-            let client = app.pool.get().await.unwrap();
-            println!("flush {}", metrics.len());
-            flush_direct(client, metrics).await.unwrap();
+
+            if let Ok(client) = app.pool.get().await {
+                flush_direct(client, metrics).await.ok();
+            }
         }
     });
 
@@ -179,9 +180,10 @@ async fn redirect_to_url(
 
         if app.metrics_buffer.len() >= 1000 {
             let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
-            let client = app.pool.get().await.unwrap();
 
-            tokio::spawn(flush_direct(client, metrics));
+            if let Ok(client) = app.pool.get().await {
+                tokio::spawn(flush_direct(client, metrics));
+            }
         }
 
         return Ok((jar, Redirect::temporary(&url)));
