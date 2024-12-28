@@ -1,11 +1,16 @@
 #![feature(let_chains)]
 #![feature(const_for)]
+mod headers;
 mod id;
 mod metrics;
-mod sqlite;
+mod migrations;
 mod structs;
+mod url_storage;
 
+use headers::*;
+use rusqlite::Connection;
 use std::sync::Arc;
+use std::{fs, path};
 use std::{net::SocketAddr, time::Duration};
 use tokio::{sync::Mutex, time};
 use tokio_postgres::NoTls;
@@ -24,11 +29,11 @@ use rusqlite::Error::SqliteFailure;
 
 use id::generate_id;
 use metrics::{persist_metrics, Metric};
-use sqlite::SqliteStorage;
 use structs::{CreateShortUrl, ShortUrlCreated};
+use url_storage::UrlStorage;
 
 struct AppState {
-    storage: SqliteStorage,
+    storage: UrlStorage,
     metrics_buffer: Vec<Metric>,
     pool: deadpool_postgres::Pool,
 }
@@ -37,47 +42,32 @@ const VISITOR_COOKIE: &str = "visitor-id";
 
 #[tokio::main]
 async fn main() {
-    let storage = SqliteStorage::new();
+    let data_dir = path::Path::new("./data");
+    fs::create_dir_all(data_dir).unwrap();
 
-    // for _ in 0..5000000 {
-    //     let visitor_id: i32 = thread_rng().gen_range(1..100);
+    let mut connection = Connection::open(data_dir.join("db2.sqlite")).unwrap();
+    connection.pragma_update(None, "journal_mode", "WAL").unwrap();
+    connection.pragma_update(None, "synchronous", "NORMAL").unwrap();
+    connection.pragma_update(None, "wal_checkpoint", "TRUNCATE").unwrap();
 
-    //     metrics
-    //         .add(Metric {
-    //             android: Some(true),
-    //             ios: Some(true),
-    //             mobile: Some(true),
-    //             city: Some("Rostock".to_owned()),
-    //             country: Some("DE".to_owned()),
-    //             region_name: Some("Mecklenburg-Vorpommern".to_owned()),
-    //             time_zone: Some("Europe/Berlin".to_owned()),
-    //             user_agent: Some("chrome".to_owned()),
-    //             zip_code: Some("18057".to_owned()),
-    //             ip: "asd".to_owned(),
-    //             shorthand_id: "asd".to_owned(),
-    //             url: "https://google.com".to_owned(),
-    //             visitor_id: visitor_id.to_string(),
-    //             latitude: Some(12.23),
-    //             longitude: Some(53.23),
-    //         })
-    //         .await
-    //         .unwrap();
-    // }
+    let mut deadpool = deadpool_postgres::Config::new();
+    deadpool.dbname = Some("metrics".to_string());
+    deadpool.host = Some("localhost".to_string());
+    deadpool.port = Some(6432);
+    deadpool.user = Some("postgres".to_string());
+    deadpool.password = Some("password".to_string());
 
-    let mut cfg = deadpool_postgres::Config::new();
-    cfg.dbname = Some("metrics".to_string());
-    cfg.host = Some("localhost".to_string());
-    cfg.port = Some(6432);
-    cfg.user = Some("postgres".to_string());
-    cfg.password = Some("password".to_string());
-
-    cfg.manager = Some(deadpool_postgres::ManagerConfig {
+    deadpool.manager = Some(deadpool_postgres::ManagerConfig {
         recycling_method: deadpool_postgres::RecyclingMethod::Fast,
     });
 
-    let pool = cfg
+    let pool = deadpool
         .create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)
         .unwrap();
+
+    migrations::run_migrations(&mut connection, &pool).await;
+
+    let storage = UrlStorage::new(connection);
 
     let state = Arc::new(Mutex::new(AppState {
         storage,
@@ -160,8 +150,7 @@ async fn redirect_to_url(
         let metric = Metric {
             visitor_id,
             shorthand_id: id,
-            ip: header_to_string(&headers, "cloudfront-viewer-address")
-                .unwrap_or_else(|| addr.ip().to_string()),
+            ip: header_to_string(&headers, "cloudfront-viewer-address").unwrap_or_else(|| addr.ip().to_string()),
             url: url.clone(),
             android: header_to_bool(&headers, "cloudfront-is-android-viewer"),
             ios: header_to_bool(&headers, "cloudfront-is-ios-viewer"),
@@ -182,25 +171,11 @@ async fn redirect_to_url(
             && let Ok(client) = app.pool.get().await
         {
             let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
-            tokio::spawn(persist_metrics(client, metrics));
+            tokio::spawn(async { persist_metrics(client, metrics).await.unwrap() });
         }
 
         return Ok((jar, Redirect::temporary(&url)));
     }
 
     Err(StatusCode::NOT_FOUND)
-}
-
-fn header_to_bool(headers: &HeaderMap, key: &str) -> Option<bool> {
-    headers.get(key).map(|value| value == "true")
-}
-
-fn header_to_string(headers: &HeaderMap, key: &str) -> Option<String> {
-    headers
-        .get(key)
-        .and_then(|v| v.to_str().ok().map(String::from))
-}
-
-fn header_to_float(headers: &HeaderMap, key: &str) -> Option<f64> {
-    headers.get(key).and_then(|v| v.to_str().ok()?.parse().ok())
 }
