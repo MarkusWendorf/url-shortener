@@ -178,12 +178,11 @@ async fn redirect_to_url(
 
         app.metrics_buffer.push(metric);
 
-        if app.metrics_buffer.len() >= 1000 {
+        if app.metrics_buffer.len() >= 1000
+            && let Ok(client) = app.pool.get().await
+        {
             let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
-
-            if let Ok(client) = app.pool.get().await {
-                tokio::spawn(flush_direct(client, metrics));
-            }
+            tokio::spawn(flush_direct(client, metrics));
         }
 
         return Ok((jar, Redirect::temporary(&url)));
