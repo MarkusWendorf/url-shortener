@@ -23,7 +23,7 @@ use axum_extra::extract::cookie::{Cookie, CookieJar};
 use rusqlite::Error::SqliteFailure;
 
 use id::generate_id;
-use metrics::{flush_direct, Metric};
+use metrics::{persist_metrics, Metric};
 use sqlite::SqliteStorage;
 use structs::{CreateShortUrl, ShortUrlCreated};
 
@@ -95,7 +95,7 @@ async fn main() {
             let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
 
             if let Ok(client) = app.pool.get().await {
-                flush_direct(client, metrics).await.ok();
+                persist_metrics(client, metrics).await.ok();
             }
         }
     });
@@ -182,7 +182,7 @@ async fn redirect_to_url(
             && let Ok(client) = app.pool.get().await
         {
             let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
-            tokio::spawn(flush_direct(client, metrics));
+            tokio::spawn(persist_metrics(client, metrics));
         }
 
         return Ok((jar, Redirect::temporary(&url)));

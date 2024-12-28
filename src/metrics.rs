@@ -62,9 +62,9 @@ const COPY_TYPES: [Type; 17] = [
     Type::TEXT,
 ];
 
-pub async fn flush_direct(
+pub async fn persist_metrics(
     mut client: deadpool_postgres::Object,
-    mut metrics: Vec<Metric>,
+    metrics: Vec<Metric>,
 ) -> Result<(), Error> {
     let transaction = client.transaction().await?;
     let sink = transaction.copy_in(COPY_STMT).await?;
@@ -74,7 +74,7 @@ pub async fn flush_direct(
 
     let mut row: Vec<&'_ (dyn ToSql + Sync)> = Vec::new();
 
-    for metric in metrics.drain(..).into_iter() {
+    for metric in metrics {
         row.clear();
 
         let id = Uuid::now_v7();
