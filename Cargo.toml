@@ -13,8 +13,9 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1.0.215", features = ["derive"] }
 tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
 uuid = { version = "1.11.0", features = ["v7", "fast-rng"] }
-tokio-postgres = "0.7.12"
+tokio-postgres = { version = "0.7.12", features = ["with-chrono-0_4"] }
 deadpool-postgres = "0.14.1"
+chrono = "0.4.39"
 
 [profile.release]
 opt-level = 3

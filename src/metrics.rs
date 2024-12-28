@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use rand::{thread_rng, Rng};
 use tokio::pin;
 use tokio_postgres::{binary_copy::BinaryCopyInWriter, types::ToSql};
@@ -7,6 +8,7 @@ use uuid::Uuid;
 pub struct Metric {
     pub visitor_id: String,
     pub shorthand_id: String,
+    pub created_at: DateTime<Utc>,
     pub url: String,
     pub ip: String,
     pub android: Option<bool>,
@@ -39,10 +41,11 @@ const COPY_STMT: &str = r"COPY metrics (
   user_agent, 
   longitude, 
   latitude, 
-  visitor_id
+  visitor_id,
+  created_at
 ) FROM STDIN BINARY";
 
-const COPY_TYPES: [Type; 17] = [
+const COPY_TYPES: [Type; 18] = [
     Type::TEXT,
     Type::TEXT,
     Type::TEXT,
@@ -60,12 +63,10 @@ const COPY_TYPES: [Type; 17] = [
     Type::FLOAT8,
     Type::FLOAT8,
     Type::TEXT,
+    Type::TIMESTAMPTZ,
 ];
 
-pub async fn persist_metrics(
-    mut client: deadpool_postgres::Object,
-    metrics: Vec<Metric>,
-) -> Result<(), Error> {
+pub async fn persist_metrics(mut client: deadpool_postgres::Object, metrics: Vec<Metric>) -> Result<(), Error> {
     let transaction = client.transaction().await?;
     let sink = transaction.copy_in(COPY_STMT).await?;
 
@@ -80,7 +81,6 @@ pub async fn persist_metrics(
         let id = Uuid::now_v7();
         let user_id: u32 = thread_rng().gen_range(1..100);
 
-        // TODO: add timestamp instead of relying on auto generated value (insert time != event time)
         writer
             .as_mut()
             .write(&[
@@ -101,6 +101,7 @@ pub async fn persist_metrics(
                 &metric.longitude,
                 &metric.latitude,
                 &metric.visitor_id,
+                &metric.created_at,
             ])
             .await?;
     }

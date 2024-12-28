@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS metrics (
 	longitude FLOAT8,
 	latitude FLOAT8,
   visitor_id TEXT,
-	PRIMARY KEY (id, created_at)
+	PRIMARY KEY (user_id, visitor_id, id, created_at)
 );
 
 SELECT create_hypertable('metrics', by_range('created_at'));

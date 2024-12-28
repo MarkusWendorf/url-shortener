@@ -7,6 +7,7 @@ mod migrations;
 mod structs;
 mod url_storage;
 
+use chrono::Utc;
 use headers::*;
 use rusqlite::Connection;
 use std::sync::Arc;
@@ -150,6 +151,7 @@ async fn redirect_to_url(
         let metric = Metric {
             visitor_id,
             shorthand_id: id,
+            created_at: Utc::now(),
             ip: header_to_string(&headers, "cloudfront-viewer-address").unwrap_or_else(|| addr.ip().to_string()),
             url: url.clone(),
             android: header_to_bool(&headers, "cloudfront-is-android-viewer"),
@@ -171,7 +173,7 @@ async fn redirect_to_url(
             && let Ok(client) = app.pool.get().await
         {
             let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
-            tokio::spawn(async { persist_metrics(client, metrics).await.unwrap() });
+            tokio::spawn(persist_metrics(client, metrics));
         }
 
         return Ok((jar, Redirect::temporary(&url)));
