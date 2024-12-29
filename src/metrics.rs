@@ -47,7 +47,7 @@ pub struct Metric {
 }
 
 pub async fn persist_metrics(mut client: deadpool_postgres::Object, metrics: Vec<Metric>) -> Result<(), Error> {
-    let geometry_type = Type::new("geometry".to_owned(), 9999, Kind::Simple, "public".to_owned());
+    let geography_type = Type::new("geography".to_owned(), 9999, Kind::Simple, "public".to_owned());
 
     let types = [
         Type::TEXT,
@@ -66,7 +66,7 @@ pub async fn persist_metrics(mut client: deadpool_postgres::Object, metrics: Vec
         Type::TEXT,
         Type::TEXT,
         Type::TIMESTAMPTZ,
-        geometry_type,
+        geography_type,
     ];
 
     let transaction = client.transaction().await?;
