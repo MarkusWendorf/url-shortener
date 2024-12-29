@@ -1,9 +1,31 @@
 use chrono::{DateTime, Utc};
+use postgis::ewkb::Point;
 use rand::{thread_rng, Rng};
 use tokio::pin;
+use tokio_postgres::types::{Kind, Type};
+use tokio_postgres::Error;
 use tokio_postgres::{binary_copy::BinaryCopyInWriter, types::ToSql};
-use tokio_postgres::{types::Type, Error};
 use uuid::Uuid;
+
+const COPY_STMT: &str = r"COPY metrics (
+  id, 
+  key, 
+  user_id, 
+  url, 
+  ip, 
+  android, 
+  ios, 
+  mobile, 
+  region_name, 
+  country, 
+  city, 
+  zip_code, 
+  time_zone, 
+  user_agent, 
+  visitor_id,
+  created_at,
+  location
+) FROM STDIN BINARY";
 
 pub struct Metric {
     pub visitor_id: String,
@@ -24,53 +46,33 @@ pub struct Metric {
     pub latitude: Option<f64>,
 }
 
-const COPY_STMT: &str = r"COPY metrics (
-  id, 
-  key, 
-  user_id, 
-  url, 
-  ip, 
-  android, 
-  ios, 
-  mobile, 
-  region_name, 
-  country, 
-  city, 
-  zip_code, 
-  time_zone, 
-  user_agent, 
-  longitude, 
-  latitude, 
-  visitor_id,
-  created_at
-) FROM STDIN BINARY";
-
-const COPY_TYPES: [Type; 18] = [
-    Type::TEXT,
-    Type::TEXT,
-    Type::TEXT,
-    Type::TEXT,
-    Type::TEXT,
-    Type::BOOL,
-    Type::BOOL,
-    Type::BOOL,
-    Type::TEXT,
-    Type::TEXT,
-    Type::TEXT,
-    Type::TEXT,
-    Type::TEXT,
-    Type::TEXT,
-    Type::FLOAT8,
-    Type::FLOAT8,
-    Type::TEXT,
-    Type::TIMESTAMPTZ,
-];
-
 pub async fn persist_metrics(mut client: deadpool_postgres::Object, metrics: Vec<Metric>) -> Result<(), Error> {
+    let geometry_type = Type::new("geometry".to_owned(), 9999, Kind::Simple, "public".to_owned());
+
+    let types = [
+        Type::TEXT,
+        Type::TEXT,
+        Type::TEXT,
+        Type::TEXT,
+        Type::TEXT,
+        Type::BOOL,
+        Type::BOOL,
+        Type::BOOL,
+        Type::TEXT,
+        Type::TEXT,
+        Type::TEXT,
+        Type::TEXT,
+        Type::TEXT,
+        Type::TEXT,
+        Type::TEXT,
+        Type::TIMESTAMPTZ,
+        geometry_type,
+    ];
+
     let transaction = client.transaction().await?;
     let sink = transaction.copy_in(COPY_STMT).await?;
 
-    let writer = BinaryCopyInWriter::new(sink, &COPY_TYPES);
+    let writer = BinaryCopyInWriter::new(sink, &types);
     pin!(writer);
 
     let mut row: Vec<&'_ (dyn ToSql + Sync)> = Vec::new();
@@ -80,6 +82,11 @@ pub async fn persist_metrics(mut client: deadpool_postgres::Object, metrics: Vec
 
         let id = Uuid::now_v7();
         let user_id: u32 = thread_rng().gen_range(1..100);
+
+        let location = match (metric.longitude, metric.latitude) {
+            (Some(lng), Some(lat)) => Some(Point::new(lng, lat, Some(4326))),
+            _ => None,
+        };
 
         writer
             .as_mut()
@@ -98,10 +105,9 @@ pub async fn persist_metrics(mut client: deadpool_postgres::Object, metrics: Vec
                 &metric.zip_code,
                 &metric.time_zone,
                 &metric.user_agent,
-                &metric.longitude,
-                &metric.latitude,
                 &metric.visitor_id,
                 &metric.created_at,
+                &location,
             ])
             .await?;
     }

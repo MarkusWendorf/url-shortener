@@ -51,16 +51,17 @@ async fn main() {
     connection.pragma_update(None, "synchronous", "NORMAL").unwrap();
     connection.pragma_update(None, "wal_checkpoint", "TRUNCATE").unwrap();
 
-    let mut deadpool = deadpool_postgres::Config::new();
-    deadpool.dbname = Some("metrics".to_string());
-    deadpool.host = Some("localhost".to_string());
-    deadpool.port = Some(6432);
-    deadpool.user = Some("postgres".to_string());
-    deadpool.password = Some("password".to_string());
-
-    deadpool.manager = Some(deadpool_postgres::ManagerConfig {
-        recycling_method: deadpool_postgres::RecyclingMethod::Fast,
-    });
+    let deadpool = deadpool_postgres::Config {
+        dbname: Some("metrics".to_string()),
+        host: Some("localhost".to_string()),
+        port: Some(6432),
+        user: Some("postgres".to_string()),
+        password: Some("password".to_string()),
+        manager: Some(deadpool_postgres::ManagerConfig {
+            recycling_method: deadpool_postgres::RecyclingMethod::Fast,
+        }),
+        ..Default::default()
+    };
 
     let pool = deadpool
         .create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)
@@ -86,7 +87,7 @@ async fn main() {
             let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
 
             if let Ok(client) = app.pool.get().await {
-                persist_metrics(client, metrics).await.ok();
+                persist_metrics(client, metrics).await.unwrap();
             }
         }
     });
@@ -120,6 +121,7 @@ async fn create_short_url(
         let id = generate_id();
         match app.storage.set(&id, &payload.url) {
             Ok(_) => return (StatusCode::CREATED, Json(ShortUrlCreated { id })).into_response(),
+            // Duplicate Key (code=1555)
             Err(SqliteFailure(err, _)) if err.extended_code == 1555 => retries += 1,
             Err(_) => break,
         }
@@ -163,8 +165,10 @@ async fn redirect_to_url(
             zip_code: header_to_string(&headers, "cloudfront-viewer-postal-code"),
             time_zone: header_to_string(&headers, "cloudfront-viewer-time-zone"),
             user_agent: header_to_string(&headers, "user-agent"),
-            longitude: header_to_float(&headers, "cloudfront-viewer-longitude"),
-            latitude: header_to_float(&headers, "cloudfront-viewer-latitude"),
+            longitude: Some(52.1),
+            latitude: Some(12.123),
+            // longitude: header_to_float(&headers, "cloudfront-viewer-longitude"),
+            // latitude: header_to_float(&headers, "cloudfront-viewer-latitude"),
         };
 
         app.metrics_buffer.push(metric);
