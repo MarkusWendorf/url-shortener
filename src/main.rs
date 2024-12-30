@@ -7,7 +7,7 @@ mod migrations;
 mod structs;
 mod url_storage;
 
-use chrono::Utc;
+use ::time::OffsetDateTime;
 use headers::*;
 use rusqlite::Connection;
 use std::sync::Arc;
@@ -153,7 +153,7 @@ async fn redirect_to_url(
         let metric = Metric {
             visitor_id,
             shorthand_id: id,
-            created_at: Utc::now(),
+            created_at: OffsetDateTime::now_utc(),
             ip: header_to_string(&headers, "cloudfront-viewer-address").unwrap_or_else(|| addr.ip().to_string()),
             url: url.clone(),
             android: header_to_bool(&headers, "cloudfront-is-android-viewer"),

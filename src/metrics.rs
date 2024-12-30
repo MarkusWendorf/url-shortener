@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use postgis::ewkb::Point;
 use rand::{thread_rng, Rng};
+use time::OffsetDateTime;
 use tokio::pin;
 use tokio_postgres::types::{Kind, Type};
 use tokio_postgres::Error;
@@ -30,7 +30,7 @@ const COPY_STMT: &str = r"COPY metrics (
 pub struct Metric {
     pub visitor_id: String,
     pub shorthand_id: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
     pub url: String,
     pub ip: String,
     pub android: Option<bool>,
