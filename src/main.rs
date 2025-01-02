@@ -1,19 +1,23 @@
 #![feature(let_chains)]
+mod entities;
 mod headers;
 mod id;
 mod metrics;
-mod migrations;
+mod middleware;
+mod postgres;
+mod routes;
+mod sqlite;
 mod structs;
 mod url_storage;
 
 use ::time::OffsetDateTime;
+use axum::middleware::from_fn_with_state;
 use headers::*;
-use rusqlite::Connection;
+use middleware::MiddlewareState;
+use routes::{api, auth};
 use std::sync::Arc;
-use std::{fs, path};
 use std::{net::SocketAddr, time::Duration};
 use tokio::{sync::Mutex, time};
-use tokio_postgres::NoTls;
 
 use axum::{
     extract::{ConnectInfo, Path, State},
@@ -42,38 +46,19 @@ const VISITOR_COOKIE: &str = "visitor-id";
 
 #[tokio::main]
 async fn main() {
-    let data_dir = path::Path::new("./data");
-    fs::create_dir_all(data_dir).unwrap();
+    let pg_pool = postgres::create_connection_pool();
+    let pg_conn = pg_pool.get().await.unwrap();
+    postgres::run_migrations(pg_conn).await;
 
-    let mut connection = Connection::open(data_dir.join("db2.sqlite")).unwrap();
-    connection.pragma_update(None, "journal_mode", "WAL").unwrap();
-    connection.pragma_update(None, "synchronous", "NORMAL").unwrap();
-    connection.pragma_update(None, "wal_checkpoint", "TRUNCATE").unwrap();
+    let mut sqlite_conn = sqlite::create_connection();
+    sqlite::run_migrations(&mut sqlite_conn);
 
-    let deadpool = deadpool_postgres::Config {
-        dbname: Some("metrics".to_string()),
-        host: Some("localhost".to_string()),
-        port: Some(6432),
-        user: Some("postgres".to_string()),
-        password: Some("password".to_string()),
-        manager: Some(deadpool_postgres::ManagerConfig {
-            recycling_method: deadpool_postgres::RecyclingMethod::Fast,
-        }),
-        ..Default::default()
-    };
-
-    let pool = deadpool
-        .create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)
-        .unwrap();
-
-    migrations::run_migrations(&mut connection, &pool).await;
-
-    let storage = UrlStorage::new(connection);
+    let storage = UrlStorage::new(sqlite_conn);
 
     let state = Arc::new(Mutex::new(AppState {
         storage,
         metrics_buffer: Vec::with_capacity(100000),
-        pool,
+        pool: pg_pool,
     }));
 
     let mut interval = time::interval(Duration::from_secs(10));
@@ -91,7 +76,20 @@ async fn main() {
         }
     });
 
-    let app = create_router(state);
+    let middleware_state = Arc::new(Mutex::new(MiddlewareState {
+        connection: sqlite::create_connection(),
+    }));
+
+    let app = Router::new()
+        .route("/", get(|| async { StatusCode::OK }))
+        .nest("/auth", auth::router())
+        .nest(
+            "/api",
+            api::router().layer(from_fn_with_state(
+                middleware_state,
+                middleware::auth::authorization_middleware,
+            )),
+        );
 
     axum::serve(
         tokio::net::TcpListener::bind("0.0.0.0:3333").await.unwrap(),
@@ -99,34 +97,6 @@ async fn main() {
     )
     .await
     .unwrap();
-}
-
-fn create_router(state: Arc<Mutex<AppState>>) -> Router {
-    Router::new()
-        .route("/", get(|| async { StatusCode::OK }))
-        .route("/create-short-url", post(create_short_url))
-        .route("/:id", get(redirect_to_url))
-        .with_state(state)
-}
-
-async fn create_short_url(
-    State(state): State<Arc<Mutex<AppState>>>,
-    Json(payload): Json<CreateShortUrl>,
-) -> impl IntoResponse {
-    let app = state.lock().await;
-    let mut retries = 0;
-
-    while retries < 5 {
-        let id = generate_id();
-        match app.storage.set(&id, &payload.url) {
-            Ok(_) => return (StatusCode::CREATED, Json(ShortUrlCreated { id })).into_response(),
-            // Duplicate Key (code=1555)
-            Err(SqliteFailure(err, _)) if err.extended_code == 1555 => retries += 1,
-            Err(_) => break,
-        }
-    }
-
-    StatusCode::INTERNAL_SERVER_ERROR.into_response()
 }
 
 async fn redirect_to_url(

@@ -17,6 +17,7 @@ tokio-postgres = { version = "0.7.12", features = ["with-time-0_3"] }
 deadpool-postgres = "0.14.1"
 postgis = "0.9.0"
 time = "0.3.37"
+argon2 = "0.5.3"
 
 [profile.release]
 opt-level = 3

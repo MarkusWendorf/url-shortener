@@ -9,3 +9,15 @@ pub struct CreateShortUrl {
 pub struct ShortUrlCreated {
     pub id: String,
 }
+
+#[derive(Deserialize)]
+pub struct Signup {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Deserialize)]
+pub struct Login {
+    pub email: String,
+    pub password: String,
+}
