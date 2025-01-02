@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use axum::{
     extract::{Request, State},
     http::StatusCode,
@@ -8,10 +7,8 @@ use axum::{
     response::Response,
 };
 use axum_extra::extract::CookieJar;
-use rusqlite::{params, Connection};
-use time::{Duration, OffsetDateTime};
+use rusqlite::Connection;
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 use crate::entities::User;
 
