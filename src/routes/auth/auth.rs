@@ -62,3 +62,7 @@ pub fn create_session(connection: &mut Connection, user_id: u64) -> Result<(Stri
         )
         .map(|_| (session_id, expires_at))
 }
+
+pub fn logout(connection: &mut Connection, session_id: &str) {
+    let _ = connection.execute("DELETE FROM sessions WHERE session_id = ?1", [session_id]);
+}

@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     extract::{ConnectInfo, Path, State},
@@ -11,7 +11,7 @@ use axum::{
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use rusqlite::Connection;
 use time::OffsetDateTime;
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::interval};
 
 use crate::{
     headers::*,
@@ -37,6 +37,21 @@ pub fn router(pool: deadpool_postgres::Pool) -> Router {
         metrics_buffer: Vec::with_capacity(BUFFER_SIZE),
         pool,
     }));
+
+    let mut interval = interval(Duration::from_secs(10));
+    let app_state = state.clone();
+
+    tokio::spawn(async move {
+        loop {
+            interval.tick().await;
+            let mut app = app_state.lock().await;
+            let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
+
+            if let Ok(client) = app.pool.get().await {
+                persist_metrics(client, metrics).await.unwrap();
+            }
+        }
+    });
 
     Router::new().route("/:id", get(redirect_to_url)).with_state(state)
 }

@@ -2,14 +2,20 @@ pub mod auth;
 
 use std::sync::Arc;
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Redirect},
+    routing::{get, post},
+    Extension, Json, Router,
+};
 use axum_extra::extract::CookieJar;
 use cookie::Cookie;
 use rusqlite::Connection;
 use tokio::sync::Mutex;
 
 use crate::{
-    middleware::auth::SESSION_COOKIE,
+    middleware::auth::{UserSession, SESSION_COOKIE},
     sqlite,
     structs::{Login, Signup},
 };
@@ -25,6 +31,7 @@ pub fn router() -> Router {
     Router::new()
         .route("/signup", post(signup))
         .route("/login", post(login))
+        .route("/logout", get(logout))
         .with_state(state)
 }
 
@@ -36,7 +43,7 @@ async fn signup(State(state): State<Arc<Mutex<AuthAppState>>>, Json(payload): Js
         return (StatusCode::CREATED, format!("User created, id: {}", user.id)).into_response();
     }
 
-    // TODO: error handlings
+    // TODO: error handling
     StatusCode::INTERNAL_SERVER_ERROR.into_response()
 }
 
@@ -63,4 +70,14 @@ async fn login(
     jar = jar.add(cookie);
 
     (jar, StatusCode::OK).into_response()
+}
+
+async fn logout(State(state): State<Arc<Mutex<AuthAppState>>>, jar: CookieJar) -> impl IntoResponse {
+    let mut app_state = state.lock().await;
+
+    if let Some(session_cookie) = jar.get(SESSION_COOKIE) {
+        auth::logout(&mut app_state.connection, session_cookie.value());
+    }
+
+    (jar.remove(SESSION_COOKIE), Redirect::temporary("/")).into_response()
 }

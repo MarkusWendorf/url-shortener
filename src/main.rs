@@ -8,7 +8,6 @@ mod postgres;
 mod routes;
 mod sqlite;
 mod structs;
-mod url_storage;
 
 use axum::middleware::from_fn_with_state;
 use middleware::MiddlewareState;
@@ -27,29 +26,6 @@ async fn main() {
 
     let mut sqlite_conn = sqlite::create_connection();
     sqlite::run_migrations(&mut sqlite_conn);
-
-    // let storage = UrlStorage::new(sqlite_conn);
-
-    // let state = Arc::new(Mutex::new(AppState {
-    //     storage,
-    //     metrics_buffer: Vec::with_capacity(100000),
-    //     pool: pg_pool,
-    // }));
-
-    // let mut interval = time::interval(Duration::from_secs(10));
-    // let app_state = state.clone();
-
-    // tokio::spawn(async move {
-    //     loop {
-    //         interval.tick().await;
-    //         let mut app = app_state.lock().await;
-    //         let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
-
-    //         if let Ok(client) = app.pool.get().await {
-    //             persist_metrics(client, metrics).await.unwrap();
-    //         }
-    //     }
-    // });
 
     let middleware_state = Arc::new(Mutex::new(MiddlewareState {
         connection: sqlite_conn,

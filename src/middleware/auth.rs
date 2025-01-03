@@ -17,8 +17,9 @@ use super::MiddlewareState;
 pub const SESSION_COOKIE: &str = "session";
 
 #[derive(Clone)]
-struct UserSession {
-    user: User,
+pub struct UserSession {
+    pub session_id: String,
+    pub user: User,
 }
 
 pub async fn authorization_middleware(
@@ -42,7 +43,11 @@ pub async fn authorization_middleware(
 
     drop(state);
 
-    req.extensions_mut().insert(UserSession { user });
+    req.extensions_mut().insert(UserSession {
+        user,
+        session_id: session_id.to_owned(),
+    });
+
     Ok(next.run(req).await)
 }
 

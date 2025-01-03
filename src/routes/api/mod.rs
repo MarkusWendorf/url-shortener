@@ -2,19 +2,13 @@ pub mod api;
 
 use std::sync::Arc;
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
-    Json, Router,
-};
-use axum_extra::extract::CookieJar;
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Extension, Json, Router};
 use rusqlite::Connection;
 use tokio::sync::Mutex;
 
 use crate::{
     id::generate_id,
+    middleware::auth::UserSession,
     sqlite,
     structs::{CreateShortUrl, ShortUrlCreated},
 };
@@ -34,11 +28,12 @@ pub fn router() -> Router {
 
 async fn create_short_url(
     State(state): State<Arc<Mutex<ApiAppState>>>,
+    session: Extension<UserSession>,
     Json(payload): Json<CreateShortUrl>,
 ) -> impl IntoResponse {
     let mut app_state = state.lock().await;
     let connection = &mut app_state.connection;
-
+    println!("{:?}", session.user);
     let user_id = 64;
 
     let mut retries = 0;
