@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 use tokio::{sync::Mutex, time::interval};
 
 use crate::{
-    headers::*,
+    headers::TypedHeaderValues,
     id::generate_id,
     metrics::{persist_metrics, Metric},
     sqlite,
@@ -90,21 +90,21 @@ async fn redirect_to_url(
         visitor_id,
         shorthand_id: id,
         created_at: OffsetDateTime::now_utc(),
-        ip: header_to_string(&headers, "cloudfront-viewer-address").unwrap_or_else(|| addr.ip().to_string()),
+        ip: headers
+            .string("cloudfront-viewer-address")
+            .unwrap_or_else(|| addr.ip().to_string()),
         url: url.clone(),
-        android: header_to_bool(&headers, "cloudfront-is-android-viewer"),
-        ios: header_to_bool(&headers, "cloudfront-is-ios-viewer"),
-        mobile: header_to_bool(&headers, "cloudfront-is-mobile-viewer"),
-        region_name: header_to_string(&headers, "cloudfront-viewer-country-region-name"),
-        country: header_to_string(&headers, "cloudfront-viewer-country"),
-        city: header_to_string(&headers, "cloudfront-viewer-city"),
-        zip_code: header_to_string(&headers, "cloudfront-viewer-postal-code"),
-        time_zone: header_to_string(&headers, "cloudfront-viewer-time-zone"),
-        user_agent: header_to_string(&headers, "user-agent"),
-        longitude: Some(52.1),
-        latitude: Some(12.123),
-        // longitude: header_to_float(&headers, "cloudfront-viewer-longitude"),
-        // latitude: header_to_float(&headers, "cloudfront-viewer-latitude"),
+        android: headers.bool("cloudfront-is-android-viewer"),
+        ios: headers.bool("cloudfront-is-ios-viewer"),
+        mobile: headers.bool("cloudfront-is-mobile-viewer"),
+        region_name: headers.string("cloudfront-viewer-country-region-name"),
+        country: headers.string("cloudfront-viewer-country"),
+        city: headers.string("cloudfront-viewer-city"),
+        zip_code: headers.string("cloudfront-viewer-postal-code"),
+        time_zone: headers.string("cloudfront-viewer-time-zone"),
+        user_agent: headers.string("user-agent"),
+        longitude: headers.float("cloudfront-viewer-longitude"),
+        latitude: headers.float("cloudfront-viewer-latitude"),
     };
 
     app.metrics_buffer.push(metric);

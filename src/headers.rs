@@ -1,15 +1,21 @@
 use axum::http::HeaderMap;
 
-pub fn header_to_bool(headers: &HeaderMap, key: &str) -> Option<bool> {
-    headers.get(key).map(|value| value == "true")
+pub trait TypedHeaderValues {
+    fn bool(&self, key: &str) -> Option<bool>;
+    fn string(&self, key: &str) -> Option<String>;
+    fn float(&self, key: &str) -> Option<f64>;
 }
 
-pub fn header_to_string(headers: &HeaderMap, key: &str) -> Option<String> {
-    headers
-        .get(key)
-        .and_then(|v| v.to_str().ok().map(String::from))
-}
+impl TypedHeaderValues for HeaderMap {
+    fn bool(&self, key: &str) -> Option<bool> {
+        self.get(key).map(|v| v == "true")
+    }
 
-pub fn header_to_float(headers: &HeaderMap, key: &str) -> Option<f64> {
-    headers.get(key).and_then(|v| v.to_str().ok()?.parse().ok())
+    fn string(&self, key: &str) -> Option<String> {
+        self.get(key).and_then(|v| v.to_str().ok().map(String::from))
+    }
+
+    fn float(&self, key: &str) -> Option<f64> {
+        self.get(key).and_then(|v| v.to_str().ok()?.parse().ok())
+    }
 }
