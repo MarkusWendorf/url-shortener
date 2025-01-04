@@ -7,7 +7,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Redirect},
     routing::{get, post},
-    Extension, Json, Router,
+    Json, Router,
 };
 use axum_extra::extract::CookieJar;
 use cookie::Cookie;
@@ -15,7 +15,7 @@ use rusqlite::Connection;
 use tokio::sync::Mutex;
 
 use crate::{
-    middleware::auth::{UserSession, SESSION_COOKIE},
+    middleware::auth::SESSION_COOKIE,
     sqlite,
     structs::{Login, Signup},
 };

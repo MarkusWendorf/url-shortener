@@ -33,14 +33,12 @@ async fn create_short_url(
 ) -> impl IntoResponse {
     let mut app_state = state.lock().await;
     let connection = &mut app_state.connection;
-    println!("{:?}", session.user);
-    let user_id = 64;
 
     let mut retries = 0;
 
     while retries < 5 {
         let id = generate_id();
-        match api::create_short_url(connection, user_id, &id, &payload.url) {
+        match api::create_short_url(connection, session.user.id, &id, &payload.url) {
             Ok(_) => return (StatusCode::CREATED, Json(ShortUrlCreated { id })).into_response(),
             // Duplicate Key (code=1555)
             Err(rusqlite::Error::SqliteFailure(err, _)) if err.extended_code == 1555 => retries += 1,
