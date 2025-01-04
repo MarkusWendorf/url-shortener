@@ -26,16 +26,16 @@ const VISITOR_COOKIE: &str = "visitor-id";
 pub struct PublicAppState {
     connection: Connection,
     metrics_buffer: Vec<Metric>,
-    pool: deadpool_postgres::Pool,
+    pg_pool: deadpool_postgres::Pool,
 }
 
-pub fn router(pool: deadpool_postgres::Pool) -> Router {
+pub fn router(pg_pool: deadpool_postgres::Pool) -> Router {
     let connection = sqlite::create_connection();
 
     let state = Arc::new(Mutex::new(PublicAppState {
         connection,
         metrics_buffer: Vec::with_capacity(BUFFER_SIZE),
-        pool,
+        pg_pool,
     }));
 
     let mut interval = interval(Duration::from_secs(10));
@@ -47,7 +47,7 @@ pub fn router(pool: deadpool_postgres::Pool) -> Router {
             let mut app = app_state.lock().await;
             let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
 
-            if let Ok(client) = app.pool.get().await {
+            if let Ok(client) = app.pg_pool.get().await {
                 persist_metrics(client, metrics).await.unwrap();
             }
         }
@@ -110,7 +110,7 @@ async fn redirect_to_url(
     app.metrics_buffer.push(metric);
 
     if app.metrics_buffer.len() >= BUFFER_SIZE
-        && let Ok(client) = app.pool.get().await
+        && let Ok(client) = app.pg_pool.get().await
     {
         let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
         tokio::spawn(persist_metrics(client, metrics));

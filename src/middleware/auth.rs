@@ -12,18 +12,19 @@ use tokio::sync::Mutex;
 
 use crate::entities::User;
 
-use super::MiddlewareState;
-
 pub const SESSION_COOKIE: &str = "session";
 
 #[derive(Clone)]
 pub struct UserSession {
-    pub session_id: String,
     pub user: User,
 }
 
+pub struct AuthMiddlewareState {
+    pub connection: Connection,
+}
+
 pub async fn authorization_middleware(
-    State(state): State<Arc<Mutex<MiddlewareState>>>,
+    State(state): State<Arc<Mutex<AuthMiddlewareState>>>,
     mut req: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
@@ -43,10 +44,7 @@ pub async fn authorization_middleware(
 
     drop(state);
 
-    req.extensions_mut().insert(UserSession {
-        user,
-        session_id: session_id.to_owned(),
-    });
+    req.extensions_mut().insert(UserSession { user });
 
     Ok(next.run(req).await)
 }

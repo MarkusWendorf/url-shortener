@@ -14,12 +14,13 @@ use crate::{
 };
 
 pub struct ApiAppState {
+    pg_conn: deadpool_postgres::Object,
     connection: Connection,
 }
 
-pub fn router() -> Router {
+pub fn router(pg_conn: deadpool_postgres::Object) -> Router {
     let connection = sqlite::create_connection();
-    let state = Arc::new(Mutex::new(ApiAppState { connection }));
+    let state = Arc::new(Mutex::new(ApiAppState { connection, pg_conn }));
 
     Router::new()
         .route("/create-short-url", post(create_short_url))
@@ -46,5 +47,17 @@ async fn create_short_url(
         }
     }
 
+    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+}
+
+async fn get_metrics(
+    State(state): State<Arc<Mutex<ApiAppState>>>,
+    session: Extension<UserSession>,
+    Json(payload): Json<CreateShortUrl>,
+) -> impl IntoResponse {
+    let app_state = state.lock().await;
+    let user_id = session.user.id;
+
+    // TODO: set cache-control headers
     StatusCode::INTERNAL_SERVER_ERROR.into_response()
 }

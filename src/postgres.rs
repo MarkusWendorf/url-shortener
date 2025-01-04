@@ -26,7 +26,7 @@ pub fn create_connection_pool() -> Pool {
         .unwrap()
 }
 
-pub async fn run_migrations(mut client: deadpool_postgres::Object) {
+pub async fn run_migrations(client: &mut deadpool_postgres::Object) {
     postgres_migrations::migrations::runner()
         .run_async(client.deref_mut().deref_mut())
         .await
