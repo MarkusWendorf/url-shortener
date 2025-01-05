@@ -34,7 +34,7 @@ async fn main() {
     let auth_middleware = from_fn_with_state(middleware_state, middleware::auth::authorization_middleware);
 
     let app = Router::new()
-        .nest("/", shorten::router(pg_pool))
+        .merge(shorten::router(pg_pool))
         .nest("/auth", auth::router())
         .nest("/api", api::router(pg_conn).layer(auth_middleware));
 

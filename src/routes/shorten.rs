@@ -53,7 +53,7 @@ pub fn router(pg_pool: deadpool_postgres::Pool) -> Router {
         }
     });
 
-    Router::new().route("/:id", get(redirect_to_url)).with_state(state)
+    Router::new().route("/{id}", get(redirect_to_url)).with_state(state)
 }
 
 async fn redirect_to_url(

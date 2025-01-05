@@ -9,8 +9,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use axum_extra::extract::CookieJar;
-use cookie::Cookie;
+use axum_extra::extract::{cookie::Cookie, CookieJar};
 use rusqlite::Connection;
 use tokio::sync::Mutex;
 
