@@ -3,7 +3,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE TABLE IF NOT EXISTS metrics (
 	id TEXT,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-	user_id TEXT,
+	user_id BIGINT,
 	key TEXT,
 	url TEXT,
 	ip TEXT,

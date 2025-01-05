@@ -77,18 +77,23 @@ async fn redirect_to_url(
 
     let query = app
         .connection
-        .prepare_cached("SELECT url FROM urls WHERE key = ?1")
-        .map(|mut q| q.query_row([&id], |row| row.get::<usize, String>(0)).ok());
+        .prepare_cached("SELECT url, user_id FROM urls WHERE key = ?1")
+        .map(|mut q| {
+            q.query_row([&id], |row| {
+                Ok((row.get::<_, String>("url")?, row.get::<_, i64>("user_id")?))
+            })
+        });
 
-    let url = match query {
-        Ok(Some(url)) => url,
-        Ok(None) => return Err(StatusCode::NOT_FOUND),
+    let (url, user_id) = match query {
+        Ok(Ok(value)) => value,
+        Ok(Err(_)) => return Err(StatusCode::NOT_FOUND),
         Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
     };
 
     let metric = Metric {
         visitor_id,
         shorthand_id: id,
+        user_id,
         created_at: OffsetDateTime::now_utc(),
         ip: headers
             .string("cloudfront-viewer-address")

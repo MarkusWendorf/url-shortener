@@ -1,5 +1,4 @@
 use postgis::ewkb::Point;
-use rand::{thread_rng, Rng};
 use time::OffsetDateTime;
 use tokio::pin;
 use tokio_postgres::types::{Kind, Type};
@@ -30,6 +29,7 @@ const COPY_STMT: &str = r"COPY metrics (
 pub struct Metric {
     pub visitor_id: String,
     pub shorthand_id: String,
+    pub user_id: i64,
     pub created_at: OffsetDateTime,
     pub url: String,
     pub ip: String,
@@ -52,7 +52,7 @@ pub async fn persist_metrics(mut client: deadpool_postgres::Object, metrics: Vec
     let types = [
         Type::TEXT,
         Type::TEXT,
-        Type::TEXT,
+        Type::INT8,
         Type::TEXT,
         Type::TEXT,
         Type::BOOL,
@@ -81,7 +81,6 @@ pub async fn persist_metrics(mut client: deadpool_postgres::Object, metrics: Vec
         row.clear();
 
         let id = Uuid::now_v7();
-        let user_id: u32 = thread_rng().gen_range(1..100);
 
         let location = match (metric.longitude, metric.latitude) {
             (Some(lng), Some(lat)) => Some(Point::new(lng, lat, Some(4326))),
@@ -93,7 +92,7 @@ pub async fn persist_metrics(mut client: deadpool_postgres::Object, metrics: Vec
             .write(&[
                 &id.to_string(),
                 &metric.shorthand_id,
-                &user_id.to_string(),
+                &metric.user_id,
                 &metric.url,
                 &metric.ip,
                 &metric.android,

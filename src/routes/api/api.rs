@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 pub fn create_short_url(
     connection: &mut Connection,
-    user_id: u64,
+    user_id: i64,
     key: &str,
     value: &str,
 ) -> Result<usize, rusqlite::Error> {

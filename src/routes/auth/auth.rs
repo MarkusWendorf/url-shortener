@@ -21,8 +21,8 @@ pub fn create_user(connection: &mut Connection, email: &str, password: &str) -> 
         "INSERT INTO users (email, pw_hash) VALUES (?1, ?2) RETURNING id, email",
         [email, &hash],
         |row| {
-            let id: u64 = row.get(0)?;
-            let email: String = row.get(1)?;
+            let id: i64 = row.get("id")?;
+            let email: String = row.get("email")?;
 
             Ok(User { id, email })
         },
@@ -34,14 +34,14 @@ pub fn verify_password(connection: &mut Connection, email: &str, password: &str)
         "SELECT pw_hash, id, email FROM users WHERE email = ?1",
         [email],
         |row| {
-            let hash: String = row.get(0)?;
+            let hash: String = row.get("pw_hash")?;
 
             let argon = Argon2::default();
             if let Ok(parsed_hash) = PasswordHash::new(&hash)
                 && argon.verify_password(password.as_bytes(), &parsed_hash).is_ok()
             {
-                let id: u64 = row.get(1)?;
-                let email: String = row.get(2)?;
+                let id: i64 = row.get("id")?;
+                let email: String = row.get("email")?;
 
                 return Ok(User { email, id });
             }
@@ -51,7 +51,7 @@ pub fn verify_password(connection: &mut Connection, email: &str, password: &str)
     )
 }
 
-pub fn create_session(connection: &mut Connection, user_id: u64) -> Result<(String, OffsetDateTime), rusqlite::Error> {
+pub fn create_session(connection: &mut Connection, user_id: i64) -> Result<(String, OffsetDateTime), rusqlite::Error> {
     let session_id = Uuid::now_v7().to_string();
     let expires_at = OffsetDateTime::now_utc() + Duration::days(1);
 

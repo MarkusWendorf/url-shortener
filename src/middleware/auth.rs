@@ -56,8 +56,8 @@ pub fn find_user_by_session_id(connection: &mut Connection, session_id: &str) ->
             )",
         [session_id],
         |row| {
-            let id: u64 = row.get(0)?;
-            let email: String = row.get(1)?;
+            let id: i64 = row.get("id")?;
+            let email: String = row.get("email")?;
 
             Ok(User { email, id })
         },

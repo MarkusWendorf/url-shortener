@@ -2,11 +2,18 @@ pub mod api;
 
 use std::sync::Arc;
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Extension, Json, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Extension, Json, Router,
+};
 use rusqlite::Connection;
 use tokio::sync::Mutex;
 
 use crate::{
+    entities::MetricsWithinInterval,
     id::generate_id,
     middleware::auth::UserSession,
     sqlite,
@@ -24,6 +31,7 @@ pub fn router(pg_conn: deadpool_postgres::Object) -> Router {
 
     Router::new()
         .route("/create-short-url", post(create_short_url))
+        .route("/metrics", get(get_metrics))
         .with_state(state)
 }
 
@@ -53,10 +61,48 @@ async fn create_short_url(
 async fn get_metrics(
     State(state): State<Arc<Mutex<ApiAppState>>>,
     session: Extension<UserSession>,
-    Json(payload): Json<CreateShortUrl>,
 ) -> impl IntoResponse {
     let app_state = state.lock().await;
     let user_id = session.user.id;
+
+    let interval = "1 minute";
+
+    let query = app_state
+        .pg_conn
+        .query(
+            r"
+        SELECT 
+          time_bucket('1 minute', created_at) AS bucket,
+          count(*) AS count,
+          count(DISTINCT visitor_id) AS unique_count
+        FROM
+          metrics
+        WHERE 
+          user_id = $1
+        GROUP BY 
+          bucket
+        ORDER BY
+          bucket DESC
+        ",
+            &[&user_id],
+        )
+        .await;
+
+    let metrics: Vec<MetricsWithinInterval> = match query {
+        Ok(rows) => rows
+            .iter()
+            .map(|row| MetricsWithinInterval {
+                count: row.get("count"),
+                unique_count: row.get("unique_count"),
+            })
+            .collect(),
+        Err(err) => {
+            println!("{:?}", err);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    println!("{:?}", metrics);
 
     // TODO: set cache-control headers
     StatusCode::INTERNAL_SERVER_ERROR.into_response()
