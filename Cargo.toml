@@ -16,7 +16,7 @@ uuid = { version = "1.11.0", features = ["v7", "fast-rng"] }
 tokio-postgres = { version = "0.7.12", features = ["with-time-0_3"] }
 deadpool-postgres = "0.14.1"
 postgis = "0.9.0"
-time = "0.3.37"
+time = { version = "0.3.37", features = ["serde"] }
 argon2 = "0.5.3"
 postgres-types = { version = "0.2.8", features = ["derive"] }
 

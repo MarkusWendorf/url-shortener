@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::entities::MetricsWithinInterval;
+
 #[derive(Deserialize)]
 pub struct CreateShortUrl {
     pub url: String,
@@ -20,4 +22,14 @@ pub struct Signup {
 pub struct Login {
     pub email: String,
     pub password: String,
+}
+
+#[derive(Deserialize)]
+pub struct MetricsRequest {
+    pub measuring_interval_minutes: u8,
+}
+
+#[derive(Serialize)]
+pub struct MetricsResponse {
+    pub metrics: Vec<MetricsWithinInterval>,
 }
