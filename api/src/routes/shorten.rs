@@ -41,17 +41,17 @@ pub fn router(pg_pool: deadpool_postgres::Pool) -> Router {
     let mut interval = interval(Duration::from_secs(10));
     let app_state = state.clone();
 
-    tokio::spawn(async move {
-        loop {
-            interval.tick().await;
-            let mut app = app_state.lock().await;
-            let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
+    // tokio::spawn(async move {
+    //     loop {
+    //         interval.tick().await;
+    //         let mut app = app_state.lock().await;
+    //         let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
 
-            if let Ok(client) = app.pg_pool.get().await {
-                persist_metrics(client, metrics).await.unwrap();
-            }
-        }
-    });
+    //         if let Ok(client) = app.pg_pool.get().await {
+    //             persist_metrics(client, metrics).await.unwrap();
+    //         }
+    //     }
+    // });
 
     Router::new().route("/{id}", get(redirect_to_url)).with_state(state)
 }
@@ -112,14 +112,14 @@ async fn redirect_to_url(
         latitude: headers.float("cloudfront-viewer-latitude"),
     };
 
-    app.metrics_buffer.push(metric);
+    // app.metrics_buffer.push(metric);
 
-    if app.metrics_buffer.len() >= BUFFER_SIZE
-        && let Ok(client) = app.pg_pool.get().await
-    {
-        let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
-        tokio::spawn(persist_metrics(client, metrics));
-    }
+    // if app.metrics_buffer.len() >= BUFFER_SIZE
+    //     && let Ok(client) = app.pg_pool.get().await
+    // {
+    //     let metrics: Vec<Metric> = app.metrics_buffer.drain(..).collect();
+    //     tokio::spawn(persist_metrics(client, metrics));
+    // }
 
     Ok((jar, Redirect::temporary(&url)))
 }

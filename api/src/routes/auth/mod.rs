@@ -37,7 +37,7 @@ pub fn router() -> Router {
 async fn signup(State(state): State<Arc<Mutex<AuthAppState>>>, Json(payload): Json<Signup>) -> impl IntoResponse {
     let mut app_state = state.lock().await;
     let connection = &mut app_state.connection;
-
+    println!("Signup {}", &payload.email);
     if let Ok(user) = auth::create_user(connection, &payload.email, &payload.password) {
         return (StatusCode::CREATED, format!("User created, id: {}", user.id)).into_response();
     }

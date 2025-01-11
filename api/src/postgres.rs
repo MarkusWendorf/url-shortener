@@ -8,13 +8,23 @@ mod postgres_migrations {
     embed_migrations!("./migrations/postgres");
 }
 
+fn env(env_key: &str, default: &str) -> Option<String> {
+    Some(std::env::var(env_key).unwrap_or(default.to_owned()))
+}
+
+fn env_int(env_key: &str, default: u16) -> Option<u16> {
+    std::env::var(env_key)
+        .map(|value| value.parse().ok())
+        .unwrap_or(Some(default))
+}
+
 pub fn create_connection_pool() -> Pool {
     let deadpool = deadpool_postgres::Config {
-        dbname: Some("metrics".to_string()),
-        host: Some("localhost".to_string()),
-        port: Some(6432),
-        user: Some("postgres".to_string()),
-        password: Some("password".to_string()),
+        dbname: env("DB_DATABASE", "metrics"),
+        host: env("DB_HOST", "localhost"),
+        port: env_int("DB_PORT", 6432),
+        user: env("DB_USER", "postgres"),
+        password: env("DB_PASSWORD", "password"),
         manager: Some(deadpool_postgres::ManagerConfig {
             recycling_method: deadpool_postgres::RecyclingMethod::Fast,
         }),

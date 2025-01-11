@@ -38,6 +38,8 @@ async fn main() {
         .nest("/auth", auth::router())
         .nest("/api", api::router(pg_conn).layer(auth_middleware));
 
+    println!("API started!");
+
     axum::serve(
         tokio::net::TcpListener::bind("0.0.0.0:3333").await.unwrap(),
         app.into_make_service_with_connect_info::<SocketAddr>(),

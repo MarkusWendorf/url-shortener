@@ -1,0 +1,33 @@
+services:
+  metrics-db:
+    image: timescale/timescaledb-ha:pg17
+    container_name: metrics-db
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: metrics
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d metrics -U myuser"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./volume-data:/var/lib/postgresql/data
+
+  rust-http:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: url-shortener
+    ports:
+      - "3333:3333"
+    depends_on:
+      metrics-db:
+        condition: service_healthy
+        restart: true
+    environment:
+      DB_USER: myuser
+      DB_PASSWORD: mypassword
+      DB_DATABASE: metrics
+      DB_HOST: metrics-db
+      DB_PORT: 5432
