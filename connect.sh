@@ -1,0 +1,1 @@
+ssh root@ec2-3-67-202-144.eu-central-1.compute.amazonaws.com

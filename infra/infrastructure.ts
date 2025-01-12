@@ -40,14 +40,14 @@ export class InfraStack extends cdk.Stack {
     const instance = new ec2.Instance(this, "Machine", {
       instanceType: ec2.InstanceType.of(
         ec2.InstanceClass.T3A,
-        ec2.InstanceSize.MEDIUM
+        ec2.InstanceSize.XLARGE2
       ),
       blockDevices: [
         {
           deviceName: "/dev/xvda",
           volume: ec2.BlockDeviceVolume.ebs(50, {
             volumeType: ec2.EbsDeviceVolumeType.IO2,
-            iops: 3200,
+            iops: 12000,
           }),
         },
       ],
@@ -55,15 +55,6 @@ export class InfraStack extends cdk.Stack {
       vpc,
       keyPair: key,
       securityGroup,
-      init: ec2.CloudFormationInit.fromElements(
-        ec2.InitService.systemdConfigFile("url-shortener", {
-          command: "/var/url-shortener/url-shortener",
-          cwd: "/var/url-shortener",
-        }),
-        ec2.InitService.enable("url-shortener", {
-          serviceManager: ec2.ServiceManager.SYSTEMD,
-        })
-      ),
     });
 
     const alb = new elb.ApplicationLoadBalancer(this, "ELB", {
